@@ -1,5 +1,4 @@
 #include "../include/common.h"
-#include <sys/select.h>
 
 static volatile int running = 1;
 
@@ -15,7 +14,6 @@ int main(int argc, char *argv[]) {
     const char *server_ip = DEFAULT_CLIENT_IP;
     int port = DEFAULT_PORT;
     int perf_test_mode = 0;
-    int receive_mode = 0;  // 接收模式：从TC3接收UDP报文
     int test_packet_count = 1000;
     int packet_size = 0;  // 0表示使用最大UDP包大小
     int iterations = 1;   // 迭代轮数，默认为1
@@ -24,7 +22,7 @@ int main(int argc, char *argv[]) {
     
     // 解析命令行参数
     int opt;
-    while ((opt = getopt(argc, argv, "hp:i:tn:s:r:R")) != -1) {
+    while ((opt = getopt(argc, argv, "hp:i:tn:s:r:")) != -1) {
         switch (opt) {
             case 'h':
                 print_usage(argv[0]);
@@ -55,18 +53,16 @@ int main(int argc, char *argv[]) {
                     iterations = 1;
                 }
                 break;
-            case 'R':
-                receive_mode = 1;  // 启用接收模式
-                break;
             default:
                 print_usage(argv[0]);
                 return 1;
         }
     }
     
-    // 接收模式需要指定IP和端口（用于绑定）
-    if (receive_mode && !server_ip) {
-        fprintf(stderr, "Error: Receive mode requires -i option to specify bind IP\n");
+    // 检查必需参数
+    if (!server_ip) {
+        fprintf(stderr, "Error: Server IP address required (use -i option)\n");
+        fprintf(stderr, "Use -h for help\n");
         return 1;
     }
     
@@ -80,93 +76,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    if (receive_mode) {
-        // 接收模式：绑定到指定端口，等待接收来自TC3的UDP报文
-        if (bind_socket(sockfd, server_ip, port) < 0) {
-            close(sockfd);
-            return 1;
-        }
-        printf("UDP Receiver started on %s:%d\n", server_ip, port);
-        printf("Waiting for UDP packets from TC3...\n");
-        printf("Press Ctrl+C to stop\n\n");
-        
-        gettimeofday(&stats.start_time, NULL);
-        
-        // 接收循环
-        while (running) {
-            struct sockaddr_in sender_addr;
-            socklen_t sender_len = sizeof(sender_addr);
-            
-            ssize_t recv_len = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0,
-                                       (struct sockaddr *)&sender_addr, &sender_len);
-            
-            if (recv_len < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                perror("recvfrom failed");
-                continue;
-            }
-            
-            stats.packets_received++;
-            stats.bytes_received += recv_len;
-            
-            char sender_ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &sender_addr.sin_addr, sender_ip, INET_ADDRSTRLEN);
-            
-            // 如果是性能测试包
-            if (recv_len >= (ssize_t)sizeof(perf_packet_t)) {
-                perf_packet_t *pkt = (perf_packet_t *)buffer;
-                
-                // 计算延迟
-                struct timeval recv_time;
-                gettimeofday(&recv_time, NULL);
-                double recv_time_ms = recv_time.tv_sec * 1000.0 + recv_time.tv_usec / 1000.0;
-                double send_time_ms = pkt->timestamp_sec * 1000.0 + pkt->timestamp_usec / 1000.0;
-                double latency_ms = recv_time_ms - send_time_ms;
-                
-                if (latency_ms > 0) {
-                    if (stats.min_latency_ms == 0 || latency_ms < stats.min_latency_ms) {
-                        stats.min_latency_ms = latency_ms;
-                    }
-                    if (latency_ms > stats.max_latency_ms) {
-                        stats.max_latency_ms = latency_ms;
-                    }
-                    stats.total_latency_ms += latency_ms;
-                    stats.avg_latency_ms = stats.total_latency_ms / stats.packets_received;
-                }
-                
-                // 每100个包显示一次进度
-                if (stats.packets_received % 100 == 0) {
-                    printf("[RECV] From %s:%d, Packet #%u, Size: %zd bytes, "
-                           "Avg Latency: %.3f ms, Total: %lu packets\n",
-                           sender_ip, ntohs(sender_addr.sin_port), pkt->seq_num, recv_len,
-                           stats.avg_latency_ms, stats.packets_received);
-                }
-            } else {
-                // 普通数据包
-                printf("[RECV] From %s:%d, Size: %zd bytes\n",
-                       sender_ip, ntohs(sender_addr.sin_port), recv_len);
-            }
-        }
-        
-        gettimeofday(&stats.end_time, NULL);
-        printf("\nReceiver shutting down...\n");
-        print_stats(&stats);
-        
-    } else if (perf_test_mode) {
+    // 设置服务器地址
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    
+    if (inet_aton(server_ip, &server_addr.sin_addr) == 0) {
+        fprintf(stderr, "Invalid server IP address: %s\n", server_ip);
+        close(sockfd);
+        return 1;
+    }
+    
+    if (perf_test_mode) {
         // 性能测试模式：发送数据包到TC3
-        // 设置服务器地址
-        memset(&server_addr, 0, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(port);
-        
-        if (inet_aton(server_ip, &server_addr.sin_addr) == 0) {
-            fprintf(stderr, "Invalid server IP address: %s\n", server_ip);
-            close(sockfd);
-            return 1;
-        }
-        
         // 如果packet_size为0或未指定，使用最大UDP包大小
         if (packet_size <= 0) {
             packet_size = MAX_BUFFER_SIZE - sizeof(perf_packet_t);
@@ -299,17 +221,6 @@ int main(int argc, char *argv[]) {
         
     } else {
         // 交互模式：发送用户输入的数据到TC3
-        // 设置服务器地址
-        memset(&server_addr, 0, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(port);
-        
-        if (inet_aton(server_ip, &server_addr.sin_addr) == 0) {
-            fprintf(stderr, "Invalid server IP address: %s\n", server_ip);
-            close(sockfd);
-            return 1;
-        }
-        
         printf("UDP Client connecting to %s:%d\n", server_ip, port);
         printf("Enter message to send (or 'quit' to exit, 'max' for maximum UDP packet):\n");
         printf("Press Ctrl+C to stop\n\n");

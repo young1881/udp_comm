@@ -187,7 +187,7 @@ void print_usage(const char *program_name) {
     
     if (is_server) {
         printf("Usage: %s [options]\n", program_name);
-        printf("Description: Receive UDP packets from TC3 (alternative to udp_client -R)\n");
+        printf("Description: Receive UDP packets from TC3\n");
         printf("Note: All programs run on Orin machine, TC3 runs its own UDP program\n");
         printf("\n");
         printf("Options:\n");
@@ -201,19 +201,20 @@ void print_usage(const char *program_name) {
         printf("  %s -i 0.0.0.0 -p 8888 -t\n", program_name);
     } else {
         printf("Usage: %s [options]\n", program_name);
+        printf("Description: Send UDP packets to TC3\n");
+        printf("Note: All programs run on Orin machine, TC3 runs its own UDP program\n");
+        printf("\n");
         printf("Options:\n");
         printf("  -h              Show this help message\n");
         printf("  -p <port>       Specify server port (default: %d)\n", DEFAULT_PORT);
-        printf("  -i <ip>         Specify server IP address (required)\n");
-        printf("  -t              Enable performance test mode (send to TC3)\n");
-        printf("  -R              Enable receive mode (receive from TC3)\n");
+        printf("  -i <ip>         Specify TC3 IP address (required)\n");
+        printf("  -t              Enable performance test mode\n");
         printf("  -n <count>      Number of test packets (default: 1000)\n");
         printf("  -s <size>       Packet size in bytes (0 or not set = max UDP size, default: 0)\n");
         printf("  -r <iterations> Number of test iterations for averaging (default: 1)\n");
         printf("\n");
         printf("Examples:\n");
         printf("  Interactive send: %s -i 192.168.1.100 -p 8888\n", program_name);
-        printf("  Receive mode:     %s -R -i 0.0.0.0 -p 8888\n", program_name);
         printf("  Send test:        %s -i 192.168.1.100 -p 8888 -t -n 1000 -s 0\n", program_name);
         printf("  Multi-iteration:  %s -i 192.168.1.100 -p 8888 -t -n 1000 -s 0 -r 10\n", program_name);
     }

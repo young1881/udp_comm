@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
     
     gettimeofday(&stats.start_time, NULL);
     
-    // 主循环：只接收数据，不回显
+    // 主循环：只接收数据
     while (running) {
         ssize_t recv_len = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0,
                                     (struct sockaddr *)&client_addr, &client_len);
