@@ -97,6 +97,27 @@ void print_stats(stats_t *stats) {
     printf("===================================\n\n");
 }
 
+// 格式化延迟显示：根据值大小自动选择单位（微秒或毫秒）
+static void format_latency(double latency_ms, char *buf, size_t buf_size) {
+    if (latency_ms < 0.001) {
+        // 小于0.001ms，使用微秒显示
+        double latency_us = latency_ms * 1000.0;
+        if (latency_us < 0.1) {
+            snprintf(buf, buf_size, "%.4f μs", latency_us);
+        } else if (latency_us < 1.0) {
+            snprintf(buf, buf_size, "%.3f μs", latency_us);
+        } else {
+            snprintf(buf, buf_size, "%.2f μs", latency_us);
+        }
+    } else if (latency_ms < 1.0) {
+        // 小于1ms，显示更多小数位
+        snprintf(buf, buf_size, "%.4f ms", latency_ms);
+    } else {
+        // 大于等于1ms，正常显示
+        snprintf(buf, buf_size, "%.3f ms", latency_ms);
+    }
+}
+
 // 打印多轮迭代测试统计信息
 void print_multi_iteration_stats(multi_iteration_stats_t *multi_stats) {
     if (!multi_stats || multi_stats->iteration_count == 0) {
@@ -144,8 +165,13 @@ void print_multi_iteration_stats(multi_iteration_stats_t *multi_stats) {
         throughput_stddev = sqrt(throughput_variance / multi_stats->iteration_count);
     }
     
+    // 格式化延迟显示
+    char avg_latency_buf[64], latency_stddev_buf[64];
+    format_latency(avg_latency, avg_latency_buf, sizeof(avg_latency_buf));
+    format_latency(latency_stddev, latency_stddev_buf, sizeof(latency_stddev_buf));
+    
     printf("\n--- 平均值 ---\n");
-    printf("平均延迟: %.3f ms (标准差: %.3f ms)\n", avg_latency, latency_stddev);
+    printf("平均延迟: %s (标准差: %s)\n", avg_latency_buf, latency_stddev_buf);
     printf("平均吞吐量: %.2f Mbps (标准差: %.2f Mbps)\n", avg_throughput, throughput_stddev);
     printf("平均丢包率: %.2f%%\n", avg_loss_rate);
     printf("平均耗时: %.3f 秒\n", avg_duration);
@@ -154,9 +180,11 @@ void print_multi_iteration_stats(multi_iteration_stats_t *multi_stats) {
     
     printf("\n--- 每轮详细结果 ---\n");
     for (int i = 0; i < multi_stats->iteration_count; i++) {
-        printf("第 %d 轮: 延迟=%.3f ms, 吞吐量=%.2f Mbps, 丢包率=%.2f%%, 耗时=%.3f 秒\n",
+        char latency_buf[64];
+        format_latency(multi_stats->avg_latencies[i], latency_buf, sizeof(latency_buf));
+        printf("第 %d 轮: 延迟=%s, 吞吐量=%.2f Mbps, 丢包率=%.2f%%, 耗时=%.3f 秒\n",
                i + 1,
-               multi_stats->avg_latencies[i],
+               latency_buf,
                multi_stats->throughputs[i],
                multi_stats->packet_loss_rates[i],
                multi_stats->durations[i]);
